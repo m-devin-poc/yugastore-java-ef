@@ -1,33 +1,40 @@
 # Yugastore in Java
 
 ![Homepage](docs/home.png)
+
+## 概要
+
 This is an implementation of a sample ecommerce app. This microservices-based retail marketplace or eCommerce app is composed of **microservices written in Spring (Java)**, a **UI based on React** and **YugabyteDB as the [distributed SQL](https://www.yugabyte.com/tech/distributed-sql/) database**.
 
 If you're using this demo app, please :star: this repository! We appreciate your support.
 
-## Trying it out
+## 目次
 
-This repo contains all the instructions you need to [run the app on your laptop](#building-the-app).
+- [概要](#概要)
+- [ドキュメント構成](#ドキュメント構成)
+- [システム全体像（アーキテクチャ）](#システム全体像アーキテクチャ)
+- [ディレクトリ構造（標準）](#ディレクトリ構造標準)
+- [共通設計原則](#共通設計原則)
+- [技術スタック](#技術スタック)
+- [クイックスタート](#クイックスタート)
 
-You can also [try the app out](https://yugastore-ui.cfapps.io/) online, it is hosted on [Pivotal Web Services](https://run.pivotal.io/).
+## ドキュメント構成
 
-# Versions
+このリポジトリに含まれるドキュメント構成を以下に示します。
 
-* Java 17
-* Spring Boot 2.6.3
-* Spring Cloud 2021.0.0
-* Yugabyte Java Driver 4.6.0-yb-10
-* Python 3 (Data Loading)
+- **README.md**（このファイル）- プロジェクト全体のガイド（読了時間: 15分）
+  - システム全体のアーキテクチャと概要
+  - 技術スタックとセットアップ手順
+  - クイックスタートガイド
+- **resources/README.md** - データローディング手順（読了時間: 5分）
+  - メタデータのパース方法
+  - YugabyteDBへのデータロード手順
+  - データクエリの例
+- **api-gateway-microservice/README.md** - API Gatewayサービスのデプロイ手順（読了時間: 3分）
+- **products-microservice/README.md** - Productsサービスのデプロイ手順（読了時間: 3分）
+- **react-ui/README.md** - React UIとSpring Bootの統合チュートリアル（読了時間: 20分）
 
-# Features
-
-* Written fully in Spring Framework
-* Desgined for multi-region and Kubernetes-native deployments
-* Features 6 Spring Boot microservices
-* Uses a discovery service that the microservices register with
-* Sample data has over 6K products in the store
-
-## Architecture
+## システム全体像（アーキテクチャ）
 
 The architecture diagram of Yugastore is shown below.
 
@@ -44,7 +51,90 @@ The architecture diagram of Yugastore is shown below.
 | [checkout](https://github.com/yugabyte/yugastore-java/tree/master/checkout-microservice) | YCQL | [localhost:8086](http://localhost:8086) | This deals with the checkout process and the placed order. It also manages the inventory of all the products because it needs to ensure the product the user is about to order is still in stock.
 | [login](https://github.com/yugabyte/yugastore-java/tree/master/login-microservice) | YSQL | [localhost:8085](http://localhost:8085) | Handles login and authentication of the users. *Note that this is still a work in progress.*
 
-# Build and run
+## ディレクトリ構造（標準）
+
+```
+yugastore-java-ef/
+├── README.md                      # このファイル
+├── pom.xml                        # 親Maven設定（全マイクロサービスをモジュールとして管理）
+├── docker-run.sh                  # Docker環境起動スクリプト
+├── yugastore-java-architecture.png # アーキテクチャ図
+├── api-gateway-microservice/      # API Gatewayサービス（ポート8081）
+│   ├── src/main/java/             # Javaソースコード
+│   ├── pom.xml                    # Maven設定
+│   └── Dockerfile                 # Docker設定
+├── cart-microservice/             # カートサービス（ポート8083、YSQL）
+│   ├── src/main/java/
+│   ├── pom.xml
+│   └── Dockerfile
+├── checkout-microservice/         # チェックアウトサービス（ポート8086、YCQL）
+│   ├── src/main/java/
+│   ├── pom.xml
+│   └── Dockerfile
+├── eureka-server-local/           # サービスディスカバリ（ポート8761）
+│   ├── src/main/java/
+│   ├── pom.xml
+│   └── Dockerfile
+├── login-microservice/            # ログインサービス（ポート8085、YSQL）
+│   ├── src/main/java/
+│   └── pom.xml
+├── products-microservice/         # 商品カタログサービス（ポート8082、YCQL）
+│   ├── src/main/java/
+│   ├── pom.xml
+│   └── Dockerfile
+├── react-ui/                      # Reactフロントエンド（ポート8080）
+│   ├── frontend/                  # Reactアプリケーション
+│   ├── src/main/java/
+│   └── pom.xml
+├── resources/                     # データベーススキーマとデータロードスクリプト
+│   ├── schema.cql                 # YCQLテーブル定義
+│   ├── schema.sql                 # YSQLテーブル定義
+│   ├── products.json              # サンプル商品データ
+│   └── dataload.sh                # データロードスクリプト
+└── docs/                          # スクリーンショット
+```
+
+## 共通設計原則
+
+### レイヤードアーキテクチャ
+
+このプロジェクトでは、保守性と拡張性を高めるため、レイヤードアーキテクチャを採用しています。
+
+1. **プレゼンテーション層（Controller層）**: REST APIエンドポイントを公開し、HTTPリクエストを処理
+2. **ビジネスロジック層（Service層）**: ビジネスロジックの実装
+3. **データアクセス層（Repository層）**: データベースとのやり取りを担当
+4. **ドメイン層**: ビジネスエンティティとドメインモデルを定義
+
+### 依存関係のルール
+
+- 上位層は下位層に依存できますが、下位層は上位層に依存してはいけません
+- Domain層は他の層に依存してはいけません（純粋なビジネスロジックのみ）
+
+### マイクロサービス間通信
+
+- 各マイクロサービスはEurekaサービスディスカバリに登録
+- API GatewayがOpenFeignを使用して他のサービスと通信
+- サービス間はREST APIで通信
+
+## 技術スタック
+
+### バージョン情報
+
+* Java 17
+* Spring Boot 2.6.3
+* Spring Cloud 2021.0.0
+* Yugabyte Java Driver 4.6.0-yb-10
+* Python 3 (Data Loading)
+
+### 主な特徴
+
+* Written fully in Spring Framework
+* Desgined for multi-region and Kubernetes-native deployments
+* Features 6 Spring Boot microservices
+* Uses a discovery service that the microservices register with
+* Sample data has over 6K products in the store
+
+## クイックスタート
 
 To build, simply run the following from the base directory:
 
